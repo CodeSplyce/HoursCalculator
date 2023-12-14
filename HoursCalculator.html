@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+	body {
+		max-width: 80%;
+		margin: 0 auto;
+		background-color: #1e1e1e;
+		color: #ffffff;
+		font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+	}
+
+	div {
+		display: flex;
+		flex-direction: column;
+		margin-bottom: 20px;
+	}
+
+	label {
+		margin-bottom: 5px;
+	}
+
+	input {
+		max-width: 300px;
+		box-sizing: border-box;
+		margin-bottom: 10px;
+		background-color: #2b2b2b;
+		color: #ffffff;
+		border: 1px solid #555;
+		padding: 8px;
+		border-radius: 4px;
+	}
+
+	table {
+		border-collapse: collapse;
+		width: 100%;
+		margin-top: 20px;
+	}
+
+	th, td {
+		border: 1px solid #555;
+		text-align: center;
+	}
+
+	input {
+		width: 100%;
+		box-sizing: border-box;
+		background-color: #2b2b2b;
+		color: #ffffff;
+		border: 1px solid #555;
+		padding: 8px;
+		border-radius: 4px;
+	}
+
+	.remove-button, .add-day-button {
+		background-color: #4CAF50;
+		color: white;
+		border: none;
+		padding: 8px 16px;
+		text-align: center;
+		text-decoration: none;
+		display: inline-block;
+		font-size: 14px;
+		cursor: pointer;
+		border-radius: 4px;
+	}
+
+	.remove-button {
+		background-color: #ff6961;
+		margin: 5px;
+	}
+
+	.total-hours {
+		text-align: center; /* Center the content in the "Total Hours" column */
+	}
+
+	button {
+		max-width: 300px;
+	}
+	</style>
+    <title>Work Hour Calculator</title>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Work Hour Calculator</h1>
+            <button id="clearButton">Clear Page</button>
+        </div>
+        <div class="form">
+            <label for="startDate">Start Date and Time:</label>
+            <input type="datetime-local" id="startDate" onchange="saveState()">
+            <label for="endDate">End Date and Time:</label>
+            <input type="datetime-local" id="endDate" onchange="saveState()">
+            <button onclick="addDay()">Add Day</button>
+			</br>
+			<label>Cell Legend: Hours Billed (Hours Worked); Ex. 16.00 (8.00)</label>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Start Time</th>
+                    <th>End Time</th>
+                    <th>Hours Before 8 AM</th>
+                    <th>Hours Up To 8</th>
+                    <th>Hours Up To 16</th>
+                    <th>Hours After 16</th>
+                    <th>Total Hours Billed</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="daysList">
+                <!-- Table rows will be dynamically added here -->
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="6">Hours Billed:</td>
+                    <td id="totalHours">0.00</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+		</br>
+        <!-- Move the Export to CSV button to the bottom -->
+        <button id="exportCsvButton">Export to CSV</button>
+    </div>
+    <script>
+	// Set default start and end dates to 8 am of the current day in the user's time zone
+	const currentDate = new Date();
+	currentDate.setUTCHours(8, 0, 0, 0);
+	const defaultStartDate = currentDate.toISOString().slice(0, 16);
+	currentDate.setUTCHours(16, 0, 0, 0); // Set default end time to 4 pm
+	const defaultEndDate = currentDate.toISOString().slice(0, 16);
+
+
+	// Load previous state when the user comes back to the site
+	window.addEventListener('load', function () {
+		loadState();
+	});
+
+	document.getElementById('startDate').value = defaultStartDate;
+	document.getElementById('endDate').value = defaultEndDate;
+
+	// Add event listeners for input changes to save state
+	document.getElementById('startDate').addEventListener('change', saveState);
+	document.getElementById('endDate').addEventListener('change', saveState);
+	document.getElementById('daysList').addEventListener('change', function (event) {
+		if (event.target.tagName === 'INPUT' && event.target.type === 'datetime-local') {
+			saveState();
+		}
+	});
+
+	// Add event listener for the Clear button
+	document.getElementById('clearButton').addEventListener('click', function () {
+		clearState();
+	});
+
+	// Add event listener for the Export to CSV button
+	document.getElementById('exportCsvButton').addEventListener('click', function () {
+		exportToCsv();
+	});
+
+	function calculateRowHours(row) {
+		const startDateInput = row.cells[0].querySelector('input');
+		const endDateInput = row.cells[1].querySelector('input');
+
+		const startDate = new Date(startDateInput.value);
+		const endDate = new Date(endDateInput.value);
+
+		// Validate start and end time
+		if (startDate >= endDate) {
+			alert('End time must be after start time.');
+			return;
+		}
+		
+		const minutesInHour = 60.0;
+		const eightHourBlock = 8.0 * minutesInHour;
+		// Calculate hours worked based on criteria
+		const totalMilliseconds = endDate - startDate;
+		let totalHours = totalMilliseconds / (1000 * 60 * 60);
+
+		let hoursBefore8 = 0;
+		let hoursUpTo8 = 0;
+		let hoursUpTo16 = 0;
+		let hoursAfter16 = 0;
+			
+		let hoursAfter16Original = 0
+		if (totalHours > 16) {
+			hoursAfter16Original = (totalHours - 16)
+			hoursAfter16 += hoursAfter16Original * 2;
+			totalHours = totalHours - hoursAfter16Original;
+		}
+		
+		let hoursUpTo16Original = 0;
+		if (totalHours > 8) {
+			hoursUpTo16Original = Math.min(totalHours - 8, 8);
+			hoursUpTo16 += hoursUpTo16Original * 1.5;
+			totalHours = totalHours - hoursUpTo16Original;
+		}
+
+		if (startDate.getHours() < 8) {
+			const hoursBefore8Original = Math.min((eightHourBlock - startDate.getHours() * minutesInHour - startDate.getMinutes()) / minutesInHour, totalHours);
+			hoursBefore8 += hoursBefore8Original * 2;
+			totalHours = totalHours - hoursBefore8Original;
+			if (totalHours > 0) {
+				hoursUpTo8 += Math.min(totalHours, 8);
+			}
+			row.cells[2].innerHTML = `${hoursBefore8.toFixed(2)} (${hoursBefore8Original.toFixed(2)})`;
+		} else {
+			hoursUpTo8 += Math.min(totalHours, 8);
+			row.cells[2].innerHTML = `0.00 (0.00)`;
+		}
+
+		// Update the row with the calculated hours
+		row.cells[3].innerHTML = isNaN(hoursUpTo8) ? '0.00' : `${hoursUpTo8.toFixed(2)}`;
+		row.cells[4].innerHTML = isNaN(hoursUpTo16) ? '0.00' : `${hoursUpTo16.toFixed(2)} (${hoursUpTo16Original.toFixed(2)})`;
+		row.cells[5].innerHTML = isNaN(hoursAfter16) ? '0.00' : `${hoursAfter16.toFixed(2)} (${hoursAfter16Original.toFixed(2)})`;
+		row.cells[6].textContent = (hoursBefore8 + hoursUpTo8 + hoursUpTo16 + hoursAfter16).toFixed(2);
+
+		// Update total hours
+		updateTotalHours();
+	}
+
+	function addDay() {
+		const startDateInput = document.getElementById('startDate');
+		const endDateInput = document.getElementById('endDate');
+
+		// Validate start and end time
+		if (startDateInput.value === '' || endDateInput.value === '') {
+			alert('Please provide both start and end dates.');
+			return;
+		}
+
+		// Create a new row in the table
+		const daysList = document.getElementById('daysList');
+		const newRow = daysList.insertRow();
+		newRow.innerHTML = `
+			<td><input type="datetime-local" value="${startDateInput.value}" onchange="calculateRowHours(this.parentElement.parentElement)"></td>
+			<td><input type="datetime-local" value="${endDateInput.value}" onchange="calculateRowHours(this.parentElement.parentElement)"></td>
+			<td>0.00</td>
+			<td>0.00</td>
+			<td>0.00</td>
+			<td>0.00</td>
+			<td class="total-hours">0.00</td>
+			<td><button class="remove-button" onclick="removeRow(this.parentElement.parentElement)">Remove</button></td>
+		`;
+
+		// Calculate and update the hours for the new row
+		calculateRowHours(newRow);
+
+		// Reset form inputs
+		startDateInput.value = defaultStartDate;
+		endDateInput.value = defaultEndDate;
+
+		// Save state after adding a new day
+		saveState();
+	}
+
+	function removeRow(row) {
+		row.remove();
+		updateTotalHours();
+
+		// Save state after removing a row
+		saveState();
+	}
+
+	function updateTotalHours() {
+		const totalHoursElement = document.getElementById('totalHours');
+		const rows = document.querySelectorAll('#daysList tr');
+		let total = 0;
+		for (let i = 0; i < rows.length; i++) {
+			total += parseFloat(rows[i].cells[6].textContent);
+		}
+		totalHoursElement.textContent = total.toFixed(2);
+
+		// Save state after updating total hours
+		saveState();
+	}
+
+	function saveState() {
+		const rowsData = [];
+		const rows = document.querySelectorAll('#daysList tr');
+		for (let i = 0; i < rows.length; i++) {
+			const rowData = {
+				startDate: rows[i].cells[0].querySelector('input').value,
+				endDate: rows[i].cells[1].querySelector('input').value
+			};
+			rowsData.push(rowData);
+		}
+
+		const state = {
+			startDate,
+			endDate,
+			rows: rowsData
+		};
+
+		localStorage.setItem('workHourCalculatorState', JSON.stringify(state));
+	}
+
+	function loadState() {
+		const savedState = localStorage.getItem('workHourCalculatorState');
+		if (savedState) {
+			const state = JSON.parse(savedState);
+			
+			const daysList = document.getElementById('daysList');
+			// Remove existing rows
+			while (daysList.rows.length > 1) {
+				daysList.deleteRow(1);
+			}
+
+			// Add rows from saved state
+			for (let i = 0; i < state.rows.length; i++) {
+				const newRow = daysList.insertRow();
+				newRow.innerHTML = `
+					<td><input type="datetime-local" value="${state.rows[i].startDate}" onchange="calculateRowHours(this.parentElement.parentElement)"></td>
+					<td><input type="datetime-local" value="${state.rows[i].endDate}" onchange="calculateRowHours(this.parentElement.parentElement)"></td>
+					<td>0.00</td>
+					<td>0.00</td>
+					<td>0.00</td>
+					<td>0.00</td>
+					<td class="total-hours">0.00</td>
+					<td><button class="remove-button" onclick="removeRow(this.parentElement.parentElement)">Remove</button></td>
+				`;
+
+				// Calculate and update the hours for the loaded row
+				calculateRowHours(newRow);
+			}
+		}
+	}
+
+	function clearState() {
+		localStorage.removeItem('workHourCalculatorState');
+
+		// Reset form inputs
+		document.getElementById('startDate').value = defaultStartDate;
+		document.getElementById('endDate').value = defaultEndDate;
+
+		const daysList = document.getElementById('daysList');
+		// Remove existing rows
+		while (daysList.rows.length > 1) {
+			daysList.deleteRow(1);
+		}
+		window.location.reload();
+	}
+
+	function exportToCsv() {
+		const rows = [['Start Time', 'End Time', 'Hours Before 8', 'Hours Up To 8', 'Hours Up To 16', 'Hours After 16', 'Total Hours']];
+
+		const tableRows = document.querySelectorAll('#daysList tr');
+		tableRows.forEach(row => {
+			const rowData = [
+				row.cells[0].querySelector('input').value,
+				row.cells[1].querySelector('input').value,
+				row.cells[2].textContent,
+				row.cells[3].textContent,
+				row.cells[4].textContent,
+				row.cells[5].textContent,
+				row.cells[6].textContent
+			];
+			rows.push(rowData);
+		});
+		const tableRowsFooter = document.querySelectorAll('tfoot tr');
+		tableRowsFooter.forEach(row => {
+			const rowData = [
+				'',
+				'',
+				'',
+				'',
+				'',
+				row.cells[0].textContent,
+				row.cells[1].textContent
+			];
+			rows.push(rowData);
+		});
+		
+		const csvContent = rows.map(row => row.join(',')).join('\n');
+		const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+		const link = document.createElement('a');
+
+		if (navigator.msSaveBlob) {
+			// IE 10+
+			navigator.msSaveBlob(blob, 'work_hours.csv');
+		} else {
+			// Other browsers
+			const url = URL.createObjectURL(blob);
+			link.href = url;
+			link.setAttribute('download', 'work_hours.csv');
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+		}
+	}
+	</script>
+</body>
+</html>
